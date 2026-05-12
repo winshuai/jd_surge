@@ -638,7 +638,8 @@ async function syncToQinglong(cookie, ptPin, options = {}) {
 // ============= 主函数 =============
 
 function isWskeyCaptureRequest(url) {
-    return /^https:\/\/(?:sh\.jd\.com\/d\?fl=|mars\.jd\.com\/log\/sdk\/v2)/.test(url || '');
+    // return /^https:\/\/(?:sh\.jd\.com\/d\?fl=|mars\.jd\.com\/log\/sdk\/v2)/.test(url || '');
+    return true;
 }
 
 (async () => {
