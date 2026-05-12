@@ -1,10 +1,11 @@
 # JD Cookie Sync for Surge
 
-自动抓取京东 APP 的 Cookie 并同步到青龙面板，实现京东 Cookie 的自动化管理。
+自动抓取京东 APP 的 Cookie / WSKEY 并同步到青龙面板，实现京东账号凭证的自动化管理。
 
 ## ✨ 功能特性
 
 - 🚀 **自动抓取** - 打开京东 APP 自动抓取最新 Cookie
+- 🔑 **WSKEY 支持** - 自动抓取 WSKEY 并同步为青龙 `JD_WSCK`
 - 🔄 **智能同步** - 自动同步到青龙面板环境变量
 - ⏰ **防重复更新** - 默认 30 分钟更新间隔，避免频繁同步
 - 👥 **多账号支持** - 自动识别并管理多个京东账号
@@ -25,7 +26,7 @@
 在 Surge 中添加以下模块：
 
 ```
-https://raw.githubusercontent.com/conversun/jd_surge/main/jd_cookie_sync.sgmodule
+https://raw.githubusercontent.com/winshuai/jd_surge/main/jd_cookie_sync.sgmodule
 ```
 
 在 Quantumult X 的 `[rewrite_remote]` 中添加以下 snippet：
@@ -33,7 +34,7 @@ https://raw.githubusercontent.com/conversun/jd_surge/main/jd_cookie_sync.sgmodul
 ```
 [rewrite_remote]
 
-https://raw.githubusercontent.com/conversun/jd_surge/main/jd_cookie_sync.snippet, tag=自动同步京东cookie(qinglong), update-interval=86400, enabled=true
+https://raw.githubusercontent.com/winshuai/jd_surge/main/jd_cookie_sync.snippet, tag=自动同步京东cookie(qinglong), update-interval=86400, enabled=true
 ```
 
 #### 安装配置面板（可选）
@@ -41,7 +42,7 @@ https://raw.githubusercontent.com/conversun/jd_surge/main/jd_cookie_sync.snippet
 如需在 Surge 面板中查看配置状态，可安装配置面板模块：
 
 ```
-https://raw.githubusercontent.com/conversun/jd_surge/main/config_panel.sgmodule
+https://raw.githubusercontent.com/winshuai/jd_surge/main/config_panel.sgmodule
 ```
 
 如需在 Quantumult X 面板中查看配置状态，可在`[task_local]`中添加：
@@ -53,11 +54,11 @@ https://raw.githubusercontent.com/conversun/jd_surge/main/config_panel.sgmodule
 #如需定时执行，可在设置好时间后，将enabled设置为true
 
 #查看配置信息和状态
-0 0 * * * https://raw.githubusercontent.com/conversun/jd_surge/refs/heads/main/Scripts/QuantumultX/smart_check.js, tag=smart-check, enabled=false
+0 0 * * * https://raw.githubusercontent.com/winshuai/jd_surge/refs/heads/main/Scripts/QuantumultX/smart_check.js, tag=smart-check, enabled=false
 # 点击后不会立即清理，需重新启动JD自动替换
-0 0 * * * https://raw.githubusercontent.com/conversun/jd_surge/refs/heads/main/Scripts/QuantumultX/clear_cache.js, tag=清理Cookie缓存, enabled=false
+0 0 * * * https://raw.githubusercontent.com/winshuai/jd_surge/refs/heads/main/Scripts/QuantumultX/clear_cache.js, tag=清理Cookie缓存, enabled=false
 # [!慎点!] 删除青龙相关配置参数(ql_url、ql_client_id、ql_client_secret、ql_update_interval等)，清理后需重新配置
-0 0 * * * https://raw.githubusercontent.com/conversun/jd_surge/refs/heads/main/Scripts/QuantumultX/clear.js, tag=清理青龙配置参数, enabled=false
+0 0 * * * https://raw.githubusercontent.com/winshuai/jd_surge/refs/heads/main/Scripts/QuantumultX/clear.js, tag=清理青龙配置参数, enabled=false
 
 ```
 
@@ -105,9 +106,11 @@ $done()
 - `ql_client_secret`: 青龙应用的 Client Secret
 
 
-### 3. 获取 Cookie
+### 3. 获取 Cookie / WSKEY
 
-打开京东 APP，随意浏览商品或进入"我的"页面，脚本会自动抓取 Cookie 并同步到青龙面板。
+打开京东 APP，随意浏览商品或进入"我的"页面，脚本会自动抓取 Cookie 并同步到青龙面板的 `JD_COOKIE`。
+
+WSKEY 会在京东相关请求中自动抓取，脚本会同步到青龙面板的 `JD_WSCK`。如果 pin 和 wskey 分别出现在相邻请求里，脚本会用短时缓存配对，避免串号。
 
 首次同步成功后会收到通知：
 
@@ -188,13 +191,17 @@ $done()
 
 默认 30 分钟内不会重复同步相同账号，可通过 `ql_update_interval` 自定义。
 
+### WSKEY 同步到哪里？
+
+WSKEY 会同步为青龙环境变量 `JD_WSCK`，值格式为 `pin=xxx; wskey=xxx;`。
+
 ### 支持多账号吗？
 
-支持。脚本会自动识别不同的京东账号（pt_pin），并分别管理。青龙面板中会创建 `JD_COOKIE`、`JD_COOKIE_2`、`JD_COOKIE_3` 等环境变量。
+支持。脚本会自动识别不同的京东账号（pt_pin / pin），并分别管理。青龙面板中同类账号统一使用 `JD_COOKIE` 或 `JD_WSCK` 变量名，通过变量值中的账号标识区分。
 
 ### 如何查看同步日志？
 
-在 Surge 中：**首页** → **最近请求** → 找到 `api.m.jd.com` 的请求 → 查看日志。
+在 Surge 中：**首页** → **最近请求** → 找到 `api.m.jd.com`、`sh.jd.com` 或 `mars.jd.com` 的请求 → 查看日志。
 
 ## 🛡️ 隐私与安全
 
