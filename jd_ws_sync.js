@@ -17,8 +17,8 @@ const CONFIG_KEYS = {
 };
 
 const DEFAULT_UPDATE_INTERVAL = 1800; // 默认30分钟
-const WSKEY_TEMP_EXPIRE_TIME = 15000;
-const WSKEY_PAIR_MAX_GAP = 10000;
+const WSKEY_TEMP_EXPIRE_TIME = 60000;
+const WSKEY_PAIR_MAX_GAP = 40000;
 
 // ============= 配置管理 =============
 
