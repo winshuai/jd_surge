@@ -1,9 +1,9 @@
 /**
- * JD Cookie Sync to Qinglong
- * 自动抓取京东 Cookie 并同步到青龙面板
+ * JD WSKEY Sync to Qinglong
+ * 自动抓取京东 WSKEY 并同步到青龙面板 JD_WSCK
  */
 
-const $ = new Env('JD Cookie Sync');
+const $ = new Env('JD WSKEY Sync');
 
 // ============= 常量定义 =============
 
@@ -12,10 +12,13 @@ const CONFIG_KEYS = {
     CLIENT_ID: 'ql_client_id',
     CLIENT_SECRET: 'ql_client_secret',
     UPDATE_INTERVAL: 'ql_update_interval',
-    BYPASS_CHECK: 'jd_bypass_interval_check'
+    BYPASS_CHECK: 'jd_bypass_interval_check',
+    WSKEY_TEMP: 'jd_wskey_temp'
 };
 
 const DEFAULT_UPDATE_INTERVAL = 1800; // 默认30分钟
+const WSKEY_TEMP_EXPIRE_TIME = 15000;
+const WSKEY_PAIR_MAX_GAP = 10000;
 
 // ============= 配置管理 =============
 
@@ -57,42 +60,102 @@ function validateConfig(config) {
     return {valid: true};
 }
 
-// ============= Cookie 提取与验证 =============
+// ============= WSKEY 提取与验证 =============
 
 /**
- * 从请求头提取并验证 Cookie
+ * 从请求头提取 wskey 和 pin，兼容 pin/wskey 分步出现在不同请求中的情况
  */
-function extractCookie(headers) {
+function extractWskey(headers) {
     const cookieHeader = headers['Cookie'] || headers['cookie'];
 
     if (!cookieHeader) {
         return {valid: false, message: 'Cookie header not found'};
     }
 
-    const ptKeyMatch = cookieHeader.match(/pt_key=([^;]+)/);
-    const ptPinMatch = cookieHeader.match(/pt_pin=([^;]+)/);
+    const wskeyMatch = cookieHeader.match(/wskey=([^;]+)/);
+    const pinMatch = cookieHeader.match(/(?:pt_pin|pin)=([^;]+)/);
 
-    if (!ptKeyMatch || !ptPinMatch) {
-        return {valid: false, message: 'pt_key or pt_pin not found in cookie'};
+    if (!wskeyMatch && !pinMatch) {
+        return {valid: false, message: 'wskey or pin not found in cookie'};
     }
 
-    const ptKey = ptKeyMatch[1];
-    const ptPin = decodeURIComponent(ptPinMatch[1]);
+    const now = Date.now();
+    let temp = getJson(CONFIG_KEYS.WSKEY_TEMP, {});
 
-    if (!ptKey || !ptPin || ptKey.length < 10) {
-        return {valid: false, message: 'Invalid cookie format'};
+    if (temp.ts && now - Number(temp.ts) > WSKEY_TEMP_EXPIRE_TIME) {
+        $.log('🧹 清理过期 WSKEY 临时缓存');
+        temp = {};
     }
 
-    if (ptKey.startsWith('fake_') || ptPin.toLowerCase() === 'guest') {
-        return {valid: false, message: 'Guest cookie detected, skipping sync'};
+    if (pinMatch) {
+        const pin = decodeURIComponent(pinMatch[1]);
+        if (temp.pin && temp.pin !== pin) {
+            $.log(`🔄 检测到 WSKEY 账号切换: ${temp.pin} -> ${pin}`);
+            temp = {};
+        }
+        temp.pin = pin;
+        temp.pinTs = now;
+        temp.ts = now;
     }
+
+    if (wskeyMatch) {
+        temp.wskey = wskeyMatch[1];
+        temp.wskeyTs = now;
+        temp.ts = now;
+    }
+
+    setJson(CONFIG_KEYS.WSKEY_TEMP, temp);
+
+    if (!temp.pin || !temp.wskey) {
+        return {valid: false, message: 'WSKEY or pin incomplete'};
+    }
+
+    const pairGap = Math.abs(Number(temp.pinTs || 0) - Number(temp.wskeyTs || 0));
+    if (pairGap > WSKEY_PAIR_MAX_GAP) {
+        $.log(`⚠️ WSKEY 与 pin 采集间隔过大(${pairGap}ms)，丢弃旧数据防串号`);
+        if (Number(temp.pinTs || 0) > Number(temp.wskeyTs || 0)) {
+            delete temp.wskey;
+            delete temp.wskeyTs;
+        } else {
+            delete temp.pin;
+            delete temp.pinTs;
+        }
+        temp.ts = now;
+        setJson(CONFIG_KEYS.WSKEY_TEMP, temp);
+        return {valid: false, message: 'WSKEY pair gap too large'};
+    }
+
+    const cookie = `pin=${encodeURIComponent(temp.pin)}; wskey=${temp.wskey};`;
+    setJson(CONFIG_KEYS.WSKEY_TEMP, {});
 
     return {
         valid: true,
-        cookie: `pt_key=${ptKey};pt_pin=${ptPin};`,
-        ptKey,
-        ptPin
+        cookie,
+        ptPin: temp.pin,
+        wskey: temp.wskey
     };
+}
+
+function getJson(key, defaultValue) {
+    const value = $.getval(key);
+    if (!value) {
+        return defaultValue;
+    }
+    try {
+        return JSON.parse(value);
+    } catch (error) {
+        $.log(`⚠️ JSON 解析失败 [${key}]: ${error.message || error}`);
+        return defaultValue;
+    }
+}
+
+function setJson(key, value) {
+    try {
+        return $.setval(JSON.stringify(value), key);
+    } catch (error) {
+        $.log(`⚠️ JSON 写入失败 [${key}]: ${error.message || error}`);
+        return false;
+    }
 }
 
 function maskValue(value, keepStart = 8, keepEnd = 6) {
@@ -111,7 +174,7 @@ function maskCredential(cookie) {
         return '';
     }
     return cookie
-        .replace(/pt_key=([^;]+)/, (_, value) => `pt_key=${maskValue(value)}`);
+        .replace(/wskey=([^;]+)/, (_, value) => `wskey=${maskValue(value)}`);
 }
 
 function sanitizeEndpoint(endpoint) {
@@ -123,7 +186,7 @@ function sanitizeBodyForLog(body) {
         return '';
     }
     try {
-        return JSON.stringify(body).replace(/pt_key=([^;"]+)/g, (_, value) => `pt_key=${maskValue(value)}`);
+        return JSON.stringify(body).replace(/wskey=([^;"]+)/g, (_, value) => `wskey=${maskValue(value)}`);
     } catch (error) {
         return '[body 无法序列化]';
     }
@@ -132,8 +195,8 @@ function sanitizeBodyForLog(body) {
 /**
  * 获取缓存键名
  */
-function getCacheKeys(ptPin, envName = 'JD_COOKIE') {
-    const prefix = 'jd_cookie';
+function getCacheKeys(ptPin, envName = 'JD_WSCK') {
+    const prefix = 'jd_wskey';
     return {
         cookie: `${prefix}_cache_${ptPin}`,
         lastUpdate: `${prefix}_last_update_${ptPin}`
@@ -143,7 +206,7 @@ function getCacheKeys(ptPin, envName = 'JD_COOKIE') {
 /**
  * 检查是否需要更新（基于缓存和时间间隔）
  */
-function shouldUpdate(ptPin, currentCookie, config, envName = 'JD_COOKIE') {
+function shouldUpdate(ptPin, currentCookie, config, envName = 'JD_WSCK') {
     const keys = getCacheKeys(ptPin, envName);
     const cachedCookie = $.getval(keys.cookie);
     const lastUpdate = parseInt($.getval(keys.lastUpdate) || '0');
@@ -177,7 +240,7 @@ function shouldUpdate(ptPin, currentCookie, config, envName = 'JD_COOKIE') {
 /**
  * 更新缓存
  */
-function updateCache(ptPin, cookie, envName = 'JD_COOKIE') {
+function updateCache(ptPin, cookie, envName = 'JD_WSCK') {
     const keys = getCacheKeys(ptPin, envName);
     $.setval(cookie, keys.cookie);
     $.setval(String(Date.now()), keys.lastUpdate);
@@ -283,7 +346,7 @@ async function getQinglongToken(config) {
 /**
  * 查询青龙环境变量列表
  */
-async function getEnvList(config, token, envName = 'JD_COOKIE') {
+async function getEnvList(config, token, envName = 'JD_WSCK') {
     try {
         $.log(`🔍 查询青龙环境变量: searchValue=${envName}`);
         const body = await callQinglongApi(config, token, `/open/envs?searchValue=${encodeURIComponent(envName)}`);
@@ -379,7 +442,7 @@ function extractPtPinFromValue(value) {
 /**
  * 从环境变量中提取账号标识
  */
-function extractPtPinFromEnv(env, envName = 'JD_COOKIE') {
+function extractPtPinFromEnv(env, envName = 'JD_WSCK') {
     if (env.name !== envName || !env.value) {
         return null;
     }
@@ -389,7 +452,7 @@ function extractPtPinFromEnv(env, envName = 'JD_COOKIE') {
 /**
  * 查找匹配指定 ptPin 的环境变量
  */
-function findMatchingEnvs(envList, ptPin, envName = 'JD_COOKIE') {
+function findMatchingEnvs(envList, ptPin, envName = 'JD_WSCK') {
     const matches = envList.filter(env => extractPtPinFromEnv(env, envName) === ptPin);
     $.log(`🔎 匹配环境变量 [${envName}] 账号=${ptPin}, 匹配数量=${matches.length}`);
     matches.forEach(env => {
@@ -438,7 +501,7 @@ async function deleteAllEnvs(config, token, envs) {
 /**
  * 处理已存在的环境变量
  */
-async function handleExistingEnvs(config, token, existingEnvs, cookie, ptPin, envName = 'JD_COOKIE', label = 'Cookie') {
+async function handleExistingEnvs(config, token, existingEnvs, cookie, ptPin, envName = 'JD_WSCK', label = 'WSKEY') {
     const exactMatch = existingEnvs.find(env => env.value === cookie);
     $.log(`🔧 处理已有变量 [${envName}] 账号=${ptPin}, 已有数量=${existingEnvs.length}, 是否已有完全相同值=${Boolean(exactMatch)}`);
 
@@ -470,11 +533,11 @@ function clearBypassFlag() {
 }
 
 /**
- * 同步 Cookie 到青龙
+ * 同步 WSKEY 到青龙
  */
 async function syncToQinglong(cookie, ptPin, options = {}) {
-    const envName = options.envName || 'JD_COOKIE';
-    const label = options.label || 'Cookie';
+    const envName = options.envName || 'JD_WSCK';
+    const label = options.label || 'WSKEY';
     const config = getConfig();
 
     $.log(`🚀 开始同步 ${label} 到青龙: env=${envName}, 账号=${ptPin}, value=${maskCredential(cookie)}`);
@@ -488,7 +551,7 @@ async function syncToQinglong(cookie, ptPin, options = {}) {
     // 检查配置
     const configCheck = validateConfig(config);
     if (!configCheck.valid) {
-        $.msg('JD Cookie Sync', '配置错误', configCheck.message);
+        $.msg($.name, '配置错误', configCheck.message);
         return;
     }
     $.log(`✅ 青龙配置检查通过: url=${config.qlUrl}, interval=${config.updateInterval}s`);
@@ -496,14 +559,14 @@ async function syncToQinglong(cookie, ptPin, options = {}) {
     // 获取 Token
     const tokenResult = await getQinglongToken(config);
     if (!tokenResult.success) {
-        $.msg('JD Cookie Sync', '获取 Token 失败', tokenResult.message);
+        $.msg($.name, '获取 Token 失败', tokenResult.message);
         return;
     }
 
     // 查询现有环境变量
     const envListResult = await getEnvList(config, tokenResult.token, envName);
     if (!envListResult.success) {
-        $.msg('JD Cookie Sync', '查询环境变量失败', envListResult.message);
+        $.msg($.name, '查询环境变量失败', envListResult.message);
         return;
     }
 
@@ -527,15 +590,20 @@ async function syncToQinglong(cookie, ptPin, options = {}) {
             $.log(`⏭️ 值已存在 [${ptPin}]`);
         } else {
             $.log(`✅ 同步成功 [${ptPin}]`);
-            $.msg('JD Cookie Sync', `✅ ${label} 同步成功`, `账号: ${ptPin}\n变量: ${envName}\n已同步到青龙面板`);
+            $.msg($.name, `✅ ${label} 同步成功`, `账号: ${ptPin}\n变量: ${envName}\n已同步到青龙面板`);
         }
     } else {
         $.log(`❌ 同步失败 [${ptPin}]: ${result.message}`);
-        $.msg('JD Cookie Sync', '❌ 同步失败', result.message);
+        $.msg($.name, '❌ 同步失败', result.message);
     }
 }
 
 // ============= 主函数 =============
+
+function isWskeyCaptureRequest(url) {
+    return /^https?:\/\/(?:sh\.jd\.com\/d\?fl=|mars\.jd\.com\/log\/sdk\/v2)/.test(url || '')
+        || /https?:\/\/api\.m\.jd\.com\/client\.action\?functionId=uploadPageView/.test(url || '');
+}
 
 (async () => {
     try {
@@ -543,30 +611,26 @@ async function syncToQinglong(cookie, ptPin, options = {}) {
         const requestUrl = $request.url || '';
         $.log(`📥 收到请求: ${requestUrl}`);
 
-        // 只处理京东主App的请求
-        const userAgent = headers['User-Agent'] || headers['user-agent'] || '';
-        if (!userAgent.startsWith('JD4iPhone')) {
-            $.log(`⏭️ 跳过非京东主 App 请求，User-Agent=${userAgent || '空'}`);
+        if (isWskeyCaptureRequest(requestUrl)) {
+            $.log('🔑 命中 WSKEY 捕获规则');
+            const wskeyResult = extractWskey(headers);
+
+            if (wskeyResult.valid) {
+                $.log(`✅ 成功提取 WSKEY [${wskeyResult.ptPin}]`);
+                await syncToQinglong(wskeyResult.cookie, wskeyResult.ptPin);
+            } else {
+                $.log(`⚠️ WSKEY 暂未形成完整凭证: ${wskeyResult.message}`);
+            }
+
             $.done({});
             return;
         }
 
-        // 提取并验证 Cookie
-        const cookieResult = extractCookie(headers);
-
-        if (!cookieResult.valid) {
-            $.log(`⚠️ Cookie 提取失败: ${cookieResult.message}`);
-            $.done({});
-            return;
-        }
-
-        // 同步到青龙
-        $.log(`✅ 成功提取 Cookie [${cookieResult.ptPin}]`);
-        await syncToQinglong(cookieResult.cookie, cookieResult.ptPin);
+        $.log('⏭️ 未命中 WSKEY 捕获规则，跳过');
 
     } catch (error) {
         $.log(`❌ 脚本执行异常: ${error.message || error}`);
-        $.msg('JD Cookie Sync', '脚本执行异常', String(error));
+        $.msg($.name, '脚本执行异常', String(error));
     } finally {
         $.done({});
     }

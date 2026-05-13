@@ -6,7 +6,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 This is a Surge iOS proxy automation project that automatically captures JingDong (JD.com) cookies from the JD mobile app and syncs them to a Qinglong (青龙) automation panel. The project consists of:
 
-- **jd_cookie_sync.js**: Main script that intercepts JD API requests, extracts cookies, and syncs to Qinglong
+- **jd_cookie_sync.js**: Cookie script that intercepts JD API requests, extracts `pt_key`/`pt_pin`, and syncs to Qinglong `JD_COOKIE`
+- **jd_ws_sync.js**: WSKEY script that intercepts JD WSKEY/PIN requests, pairs split captures when needed, and syncs to Qinglong `JD_WSCK`
 - **config_helper.js**: Configuration management and testing utility
 - **jd_cookie_sync.sgmodule**: Surge module configuration for cookie interception
 - **config_panel.sgmodule**: Optional Surge panel UI for configuration management
