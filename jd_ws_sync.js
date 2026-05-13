@@ -602,7 +602,7 @@ async function syncToQinglong(cookie, ptPin, options = {}) {
 
 function isWskeyCaptureRequest(url) {
     return /^https?:\/\/(?:sh\.jd\.com\/d\?fl=|mars\.jd\.com\/log\/sdk\/v2)/.test(url || '')
-        || /https?:\/\/api\.m\.jd\.com\/client\.action\?functionId=uploadPageView/.test(url || '');
+        || /https?:\/\/api\.m\.jd\.com\/client\.action.*/.test(url || '');
 }
 
 (async () => {
