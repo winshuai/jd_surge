@@ -4,5 +4,4 @@
 
 hostname = api.m.jd.com, sh.jd.com, mars.jd.com
 
-^https?:\/\/(?:api\.m\.jd\.com\/client\.action\?functionId=(?:getJDUserInfoUnion|queryJDUserInfo|myHomeV2|home|wareBusiness|basicConfig|uploadPageView)|sh\.jd\.com\/d\?fl=|mars\.jd\.com\/log\/sdk\/v2) url script-request-header https://raw.githubusercontent.com/winshuai/jd_surge/main/jd_ws_sync.js
-
+^https?:\/\/(?:api\.m\.jd\.com\/client\.action\.*|sh\.jd\.com\/d\?fl=|mars\.jd\.com\/log\/sdk\/v2) url script-request-header https://raw.githubusercontent.com/winshuai/jd_surge/main/jd_ws_sync.js
